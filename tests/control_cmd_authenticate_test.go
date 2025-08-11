@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"os"
 	"testing"
 
 	"github.com/cretz/bine/tor"
@@ -28,6 +29,8 @@ func TestAuthenticateSafeCookie(t *testing.T) {
 
 func TestAuthenticateHashedPassword(t *testing.T) {
 	// "testpass" - 16:5417AE717521511A609921392778FFA8518EC089BF2162A199241AEB4A
+	pass := os.Getenv()
+
 	ctx := NewTestContext(t, &tor.StartConf{
 		DisableCookieAuth: true,
 		DisableEagerAuth:  true,

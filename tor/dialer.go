@@ -9,11 +9,6 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-// Dialer is a wrapper around a proxy.Dialer for dialing connections.
-type Dialer struct {
-	proxy.Dialer
-}
-
 // DialConf is the configuration used for Dialer.
 type DialConf struct {
 	// ProxyAddress is the address for the SOCKS5 proxy. If empty, it is looked
@@ -43,7 +38,7 @@ type DialConf struct {
 
 // Dialer creates a new Dialer for the given configuration. Context can be nil.
 // If conf is nil, a default is used.
-func (t *Tor) Dialer(ctx context.Context, conf *DialConf) (*Dialer, error) {
+func (t *Tor) Dialer(ctx context.Context, conf *DialConf) (proxy.ContextDialer, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -82,30 +77,44 @@ func (t *Tor) Dialer(ctx context.Context, conf *DialConf) (*Dialer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Dialer{dialer}, nil
+
+	return &dialerCtxWrapper{dialer: dialer}, nil
 }
 
-// DialContext is the equivalent of net.DialContext.
-//
-// TODO: Remove when https://github.com/golang/go/issues/17759 is released.
-func (d *Dialer) DialContext(ctx context.Context, network string, addr string) (net.Conn, error) {
-	errCh := make(chan error, 1)
-	connCh := make(chan net.Conn, 1)
-	go func() {
-		if conn, err := d.Dial(network, addr); err != nil {
-			errCh <- err
-		} else if ctx.Err() != nil {
-			conn.Close()
-		} else {
-			connCh <- conn
+type dialerCtxWrapper struct {
+	dialer proxy.Dialer
+}
+
+func (w *dialerCtxWrapper) DialContext(
+	ctx context.Context,
+	network, address string,
+) (net.Conn, error) {
+	return dialWithCtx(w.dialer.Dial)(ctx, network, address)
+}
+
+func dialWithCtx[Conn any](
+	f func(string, string) (Conn, error),
+) func(context.Context, string, string) (Conn, error) {
+	return func(ctx context.Context, network, address string) (zeroConn Conn, err error) {
+		chConn := make(chan Conn)
+		chErr := make(chan error)
+
+		go func() {
+			conn, err := f(network, address)
+			if err != nil {
+				chErr <- err
+				return
+			}
+			chConn <- conn
+		}()
+
+		select {
+		case <-ctx.Done():
+			return zeroConn, ctx.Err()
+		case err := <-chErr:
+			return zeroConn, err
+		case conn := <-chConn:
+			return conn, nil
 		}
-	}()
-	select {
-	case err := <-errCh:
-		return nil, err
-	case conn := <-connCh:
-		return conn, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
 	}
 }

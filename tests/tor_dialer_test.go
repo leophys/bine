@@ -3,7 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -17,7 +17,7 @@ func TestDialerSimpleHTTP(t *testing.T) {
 	httpClient := httpClient(ctx, nil)
 	// IsTor check
 	byts := httpGet(ctx, httpClient, "https://check.torproject.org/api/ip")
-	jsn := map[string]interface{}{}
+	jsn := map[string]any{}
 	ctx.Require.NoError(json.Unmarshal(byts, &jsn))
 	ctx.Require.True(jsn["IsTor"].(bool))
 }
@@ -39,7 +39,7 @@ func httpGet(ctx *TestContext, client *http.Client, url string) []byte {
 	resp, err := ctxhttp.Get(callCtx, client, url)
 	ctx.Require.NoError(err)
 	defer resp.Body.Close()
-	respBytes, err := ioutil.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(resp.Body)
 	ctx.Require.NoError(err)
 	return respBytes
 }
